@@ -19,28 +19,55 @@ function getShouldDrop<C>(keys: (keyof C)[]): ShouldDrop<C> {
   return (previous, current) => keys.reduce((acc, key) => (acc ? true : previous[key] !== current[key]), false);
 }
 
-function grouping<C, U, A>(
-  cascadingReducer: CascadingReducer<C, U>,
+type Init<C, A> = (current: C) => A;
+
+function getUndefinedReducer<C, A>(
+  init: Init<C, A>,
+  reducer: Reducer<C, A>
+) {
+  return (acc, current) => {
+    let result = acc;
+    if (result === undefined) {
+      result = init(current);
+    }
+    return reducer(result, current);
+  };
+}
+
+// init = current => ({
+//   ...current,
+//   items: [],
+//   count: 0,
+// });
+// 
+// reducer = (acc, c) => ({
+//   ...acc,
+//   items: [ ...(acc.items), { item: c.item } ],
+//   count: acc.count + 1,
+// });
+
+function grouping<C, B, A>(
+  cascadingReducer: CascadingReducer<C, B>,
   keys: (keyof C)[],
-  getReducer: GetReducer<U, A>
+  init: Init<B, A>,
+  reducer: Reducer<B, A>
 ): CascadingReducer<C, A> {
 
-  const init: Init<R> = () => undefined;
-  const shouldDrop = getShouldReset(keys);
-  const reducer = getReducer(); // TODO 引数?
+  const init: Init<A> = () => undefined;
+  const shouldDrop = getShouldDrop(keys);
+  const groupingReducer = getUndefinedReducer(init, reducer);
 
-  return build(cascadingReducer, init, shouldDrop, reducer);
+  return build(cascadingReducer, init, shouldDrop, groupingReducer);
 }
 
 type Shut<C, A> = (values: Iterable<C>) => A;
-function shut<C, U, A>(
-  cascadingReducer: CascadingReducer<C, U>,
+function shut<C, B, A>(
+  cascadingReducer: CascadingReducer<C, B>,
   init: Init<A>,
-  getReducer: GetReducer<U, A>,
+  reducer: Reducer<B, A>,
 ): Shut<C, A> {
 
-  const shouldDrop: ShouldDrop<P> = (previous, current) => false;
-  const reducer = getReducer(); // TODO 引数?
+  const shouldDrop: ShouldDrop<C> = (previous, current) => false;
 
   return values => iteraterReduce(
     build(cascadingReducer, init, shouldDrop, reducer);
@@ -48,17 +75,17 @@ function shut<C, U, A>(
   );
 }
 
-export type GroupingMethod<C, U, A> = (keys: (keyof C)[], getReducer: GetReducer<U, A>) => Grouping<C, U, A>;
+export type GroupingMethod<C, B, A> = (keys: (keyof C)[], getReducer: GetReducer<B, A>) => Grouping<C, B, A>;
 export type ShutMethod<C, A> = (init: Init<A>, getReducer: GetReducer<C, A>) => A;
-export type Grouping<C, U, A> = {
-  grouping: GroupingMethod<C, U, A>,
-  shut: ShutMethod<U, A>,
+export type Grouping<C, B, A> = {
+  grouping: GroupingMethod<C, B, A>,
+  shut: ShutMethod<B, A>,
 };
 
-function createFrom<C, U, A>(cascadingReducer: CascadingReducer<C, U>): Grouping<C, U, A> {
+function createFrom<C, B, A>(cascadingReducer: CascadingReducer<C, B>): Grouping<C, B, A> {
 
-  const groupingMethod: GroupingMethod<C, U, A> = (keys, getReducer) => createFrom(grouping(cascadingReducer, keys, getReducer));
-  const shutMethod: ShutMethod<U, A> = (init, getReducer) => close(cascadingReducer, init, getReducer);
+  const groupingMethod: GroupingMethod<C, B, A> = (keys, getReducer) => createFrom(grouping(cascadingReducer, keys, getReducer));
+  const shutMethod: ShutMethod<B, A> = (init, getReducer) => shut(cascadingReducer, init, getReducer);
 
   return {
     grouping: groupingMethod,
@@ -66,11 +93,11 @@ function createFrom<C, U, A>(cascadingReducer: CascadingReducer<C, U>): Grouping
   };
 }
 
-export function create<C, U, A>(): Grouping<C, U, A> {
+export function create<C, B, A>(): Grouping<C, B, A> {
 
   const shouldDrop: ShouldDrop<C> = (previous, current) => true;
-  const init: Init<U> = () => undefined;
-  const reducer: Reducer<C, U> = (acc, current) => current; // TODO ここにconsole.debugしこめる
+  const init: Init<B> = () => undefined;
+  const reducer: Reducer<C, B> = (acc, current) => current; // TODO ここにconsole.debugしこめる
 
-  return createFrom(first(init, shouldReset, reducer));
+  return createFrom(first(init, shouldDrop, reducer));
 }

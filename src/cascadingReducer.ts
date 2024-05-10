@@ -19,15 +19,15 @@ export function first<C, A>(
   reducer: Reducer<C, A>
 ): CascadingReducer<C, A> {
 
-  let previous: P? = undefined;
-  let accumlater: R = init();
+  let previous: C? = undefined;
+  let accumlater: A = init();
 
-  const reduce: Reduce<P> = current => {
+  const reduce: Reduce<C> = current => {
     accumlater = reducer(accumlater, current);
     previous = current;
   };
 
-  const drop: Drop<R> = () => {
+  const drop: Drop<A> = () => {
     const result = accumlater;
     accumlater = init();
     return result;
@@ -40,17 +40,17 @@ export function first<C, A>(
   };
 }
 
-export function build<C, U, A>(
-  upperStep: CascadingReducer<C, U>,
+export function build<C, B, A>(
+  upperStep: CascadingReducer<C, B>,
   init: Init<A>,
   shouldDrop: ShouldDrop<C>,
-  reducer: Reducer<U, A>
+  reducer: Reducer<B, A>
 ): CascadingReducer<C, A> {
 
-  let previous: P? = undefined;
-  let accumlater: R = init();
+  let previous: C? = undefined;
+  let accumlater: A = init();
 
-  const reduce: Reduce<P> = current => {
+  const reduce: Reduce<C> = current => {
     if (upperStep.shouldDrop(previous, current)) {
       accumlater = reducer(accumlater, upperStep.drop());
     }
@@ -58,7 +58,7 @@ export function build<C, U, A>(
     previous = current;
   };
 
-  const drop: Drop<R> = () => {
+  const drop: Drop<A> = () => {
     const result = reducer(accumlater, upperStep.drop());
     accumlater = init();
     return result;

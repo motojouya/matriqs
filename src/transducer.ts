@@ -1,44 +1,65 @@
+type Reducer<A, C> = (accumlater: A, current: C) => A;
+type Mapper<T, S> = (value: T) => S;
+type Predicater<T> = (value: T) => boolean;
 
-// TODO trancducer を作る
-// - map
-// - filter
-// - reduce
-// - end
-//
-// endで最後のreducerになる
+type Transducer<C, B, A> = (reducer: Reducer<B, A>) => Reducer<C, A>;
 
-
-// 型つけられない
-// @ts-ignore
-function compose(...reducers) {
-  const [ head, ...rest ] = reducers.reverse();
-  return rest.reduce((acc, reducer) => reducer(acc), head);
+function mapping<C, B, A>(map: Map<C, B>): Transducer<C, B, A> {
+  return function (reducer: Reducer<A, B>) {
+    return function (accumlater: A, current: C) {
+      if (predicate(current)) {
+        return reducer(acc, current);
+      } else {
+        return acc;
+      }
+    };
+  };
 }
 
+function filtering<C, A>(predicate: Predicate<C>): Transducer<C, C, A> {
+  return function (reducer: Reducer<A, C>) {
+    return function (accumlater: A, current: C) {
+      if (predicate(current)) {
+        return reducer(acc, current);
+      } else {
+        return acc;
+      }
+    };
+  };
+}
 
-const mapping = f => reducing => (acc, e) => 
-    reducing(acc, f(e))
-const filtering = f => reducing => (acc, e) => 
-	f(e) 
-    ? reducing(acc, e) 
-    : reducing(acc, undefined)
-const folding = f => x => reducing => (acc, e) => 
-	acc.length === 0 
-    ? reducing(acc, f(x, e))
-    : reducing(acc, f(acc[acc.length-1], e))  
-const taking = n => reducing => (acc, e) => 
-	acc.length < n 
-    ? reducing(acc, e) 
-    : reducing(acc, undefined)
+function getReducer(transducers, reducer: Reducer) {
+  return transducers.toReversed().reduce((re, trans) => trans(re), reducer);
+}
 
-const concatF = (acc, e) => 
-    e || e===0 
-    ? [...acc, e] 
-    : [...acc]
+// TODO これだと、reduceの初期値を認識できない。型として、reducerと合わせる必要があるので、最後に適用するreducerといっしょに引数にしてもいいかも
+type TransducerStack = {
+  map,
+  filter,
+  reduce,
+};
 
-const intoArray = (...fs) => xs => 
-    xs.reduce( compose( ...fs )( concatF )
-    , []
-    );
+function getTransducerStack(transducerStack: Array): TransducerStack {
 
+  const map = mapper => {
+    transducerStack.push(mapping(mapper));
+    return getTransducerStack(transducerStack);
+  };
 
+  const filter = predicate => {
+    transducerStack.push(filtering(predicate));
+    return getTransducerStack(transducerStack);
+  };
+
+  const reduce = (reducer) => getReducer(transducerStack, reducer);
+
+  return {
+    map,
+    filter,
+    reduce,
+  };
+}
+
+export function create() {
+  return getTransducerStack([]);
+}
