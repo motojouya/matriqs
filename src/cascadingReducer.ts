@@ -2,32 +2,32 @@
 // TODO reducerはindex を引数に取りたい
 // inner index, outer indexとかあるかも。レイヤ事にある？わからん
 
-export type Init<R> = () => R;
-export type ShouldReset<P> = (before: P, parameter: P) => boolean;
-export type Reducer<P, R> = (parameter: P, accumlater: R) => R;
-export type Reduce<P> = (parameter: P) => void;
-export type Finish<R> = () => R;
-export type LayeredReducer<P, R> = {
-  reduce: Reduce<P>;
-  finish: Finish<R>;
-  shouldReset: ShouldReset<P>;
+export type Init<A> = () => A;
+export type ShouldDrop<C> = (previous?: C, current: C) => boolean;
+export type Reducer<C, A> = (accumlater: A, current: C) => A;
+export type Reduce<C> = (current: C) => void;
+export type Drop<A> = () => A;
+export type CascadingReducer<C, A> = {
+  reduce: Reduce<C>;
+  drop: Drop<A>;
+  shouldDrop: ShouldDrop<C>;
 };
 
-export function first<P, R>(
-  init: Init<R>,
-  shouldReset: ShouldReset<P>,
-  reducer: Reducer<P, R>
-): LayeredReducer<P, R> {
+export function first<C, A>(
+  init: Init<A>,
+  shouldDrop: ShouldDrop<C>,
+  reducer: Reducer<C, A>
+): CascadingReducer<C, A> {
 
-  let before: P? = undefined;
+  let previous: P? = undefined;
   let accumlater: R = init();
 
-  const reduce: Reduce<P> = parameter => {
-    prior.reduce(parameter);
-    before = parameter;
+  const reduce: Reduce<P> = current => {
+    accumlater = reducer(accumlater, current);
+    previous = current;
   };
 
-  const finish: Finish<R> = () => {
+  const drop: Drop<R> = () => {
     const result = accumlater;
     accumlater = init();
     return result;
@@ -35,51 +35,48 @@ export function first<P, R>(
 
   return {
     reduce,
-    finish,
-    shouldReset,
+    drop,
+    shouldDrop,
   };
 }
 
-export function build<P, M, R>(
-  prior: LayeredReducer<P, M>,
-  init: Init<R>,
-  shouldReset: ShouldReset<P>,
-  reducer: Reducer<M, R>
-): LayeredReducer<P, R> {
+export function build<C, U, A>(
+  upperStep: CascadingReducer<C, U>,
+  init: Init<A>,
+  shouldDrop: ShouldDrop<C>,
+  reducer: Reducer<U, A>
+): CascadingReducer<C, A> {
 
-  let before: P? = undefined;
+  let previous: P? = undefined;
   let accumlater: R = init();
 
-  const reduce: Reduce<P> = parameter => {
-    if (prior.shouldReset(before, parameter)) {
-      const priorResult = prior.finish();
-      accumlater = reducer(accumlater, priorResult);
+  const reduce: Reduce<P> = current => {
+    if (upperStep.shouldDrop(previous, current)) {
+      accumlater = reducer(accumlater, upperStep.drop());
     }
-    prior.reduce(parameter);
-    before = parameter;
+    upperStep.reduce(current);
+    previous = current;
   };
 
-  const finish: Finish<R> = () => {
-    const priorResult = prior.finish();
-    const result = reducer(accumlater, priorResult);
-
+  const drop: Drop<R> = () => {
+    const result = reducer(accumlater, upperStep.drop());
     accumlater = init();
     return result;
   };
 
   return {
     reduce,
-    finish,
-    shouldReset,
+    drop,
+    shouldDrop,
   };
 }
 
-export function iteraterReduce<P, R>(
-  parameters: Iterable<P>,
-  layeredReducer: LayeredReducer<P, R>
-): R {
-  for (const parameter of parameters) {
-    layeredReducer.reduce(parameter);
+export function iteraterReduce<C, A>(
+  cascadingReducer: CascadingReducer<C, A>,
+  values: Iterable<C>
+): A {
+  for (const current of values) {
+    cascadingReducer.reduce(current);
   }
-  return layeredReducer.finish();
+  return cascadingReducer.drop();
 }

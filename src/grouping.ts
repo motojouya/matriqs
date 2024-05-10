@@ -1,107 +1,77 @@
 import type {
   Init,
-  ShouldReset,
+  ShouldDrop,
   Reducer,
   Reduce
-  Finish,
-  LayeredReducer,
-} from "./layeredReducer.js";
+  Drop,
+  CascadingReducer,
+} from "./cascadingReducer.js";
 import {
   first,
   build,
   iteraterReduce,
-} from './layeredReducer.js';
+} from './cascadingReducer.js';
 
 // TODO
-type GetReducer<P, R> = () => Reducer<P, R>;
+type GetReducer<C, A> = () => Reducer<C, A>;
 
-function getShouldReset<P>(keys: (keyof P)[]): ShouldReset<P> {
+function getShouldDrop<C>(keys: (keyof C)[]): ShouldDrop<C> {
   return (before, parameter) => keys.reduce((acc, key) => (acc ? true : before[key] !== parameter[key]), false);
 }
 
-function grouping<P, M, R>(
-  layerdReducer: LayeredReducer<P, M>,
-  keys: (keyof P)[],
-  getReducer: GetReducer<M, R>
-): LayeredReducer<P, R> {
+function grouping<C, U, A>(
+  cascadingReducer: CascadingReducer<C, U>,
+  keys: (keyof C)[],
+  getReducer: GetReducer<U, A>
+): CascadingReducer<C, A> {
 
   const init: Init<R> = () => undefined;
-  const shouldReset = getShouldReset(keys);
+  const shouldDrop = getShouldReset(keys);
   const reducer = getReducer(); // TODO 引数?
 
-  return build(layerdReducer, init, shouldReset, reducer);
+  return build(cascadingReducer, init, shouldDrop, reducer);
 }
 
-type List<P, R> = (parameters: Iterable<P>) => R
-function list<P, M>(
-  layerdReducer: LayeredReducer<P, M>,
-  getReducer: GetReducer<M, M[]>,
-): List<P, M[]> {
+// TODO endとかfinishとか最後的な意味の名前に変えたい
+type Stream<C, A> = (values: Iterable<C>) => A;
+function stream<C, U, A>(
+  cascadingReducer: CascadingReducer<C, U>,
+  init: Init<A>,
+  getReducer: GetReducer<U, A>,
+): Stream<C, A> {
 
-  const init: Init<M[]> = () => [];
-  const shouldReset: ShouldReset<P> = (before, parameter) => false;
+  const shouldDrop: ShouldDrop<P> = (previous, current) => false;
   const reducer = getReducer(); // TODO 引数?
 
-  return parameters => iteraterReduce(
-    parameters,
-    build(layerdReducer, init, shouldReset, reducer);
+  return values => iteraterReduce(
+    build(cascadingReducer, init, shouldDrop, reducer);
+    values,
   );
 }
 
-type Stream<P, R> = (parameters: Iterable<P>) => R
-function stream<P, M, R>(
-  layerdReducer: LayeredReducer<P, M>,
-  init: Init<R>,
-  getReducer: GetReducer<M, R>,
-): Stream<P, R> {
-  const reducer = getReducer(); // TODO 引数?
-  const shouldReset: ShouldReset<P> = (before, parameter) => false;
-
-  return parameters => iteraterReduce(
-    parameters,
-    build(layerdReducer, init, shouldReset, reducer);
-  );
-}
-
-export type GroupingMethod<P, M, R> = (keys: (keyof P)[], getReducer: GetReducer<P, M>) => Grouping<P, M, R>;
-export type ListMethod<M> = (getReducer: GetReducer<M, M[]>) => M[];
-export type StreamMethod<P, R> = (init: Init<R>, getReducer: GetReducer<P, R>) => R;
-export type Grouping<P, M, R> = {
-  grouping: GroupingMethod<P, M, R>,
-  list: ListMethod<M>,
-  stream: StreamMethod<M, R>,
+export type GroupingMethod<C, U, A> = (keys: (keyof C)[], getReducer: GetReducer<U, A>) => Grouping<C, U, A>;
+export type StreamMethod<C, A> = (init: Init<A>, getReducer: GetReducer<C, A>) => A;
+export type Grouping<C, U, A> = {
+  grouping: GroupingMethod<C, U, A>,
+  stream: StreamMethod<U, A>,
 };
 
-// TODO 型ちがうかも。ちょっと難しいな
+function createFrom<C, U, A>(cascadingReducer: CascadingReducer<C, U>): Grouping<C, U, A> {
 
-function createFrom<P, M, R>(layerdReducer: LayerdReducer<P, M>): Grouping<P, M, R> {
-
-  const groupingMethod: GroupingMethod<P> = (keys, getReducer) => createFrom(grouping(layerdReducer, keys, getReducer));
-  const listMethod: ListMethod<M> = (getReducer) => list(layerdReducer, getReducer);
-  const streamMethod: StreamMethod<M, R> = (init, getReducer) => stream(layerdReducer, init, getReducer);
+  const groupingMethod: GroupingMethod<C, U, A> = (keys, getReducer) => createFrom(grouping(cascadingReducer, keys, getReducer));
+  const streamMethod: StreamMethod<U, A> = (init, getReducer) => stream(cascadingReducer, init, getReducer);
 
   return {
     grouping: groupingMethod,
-    list: listMethod,
     stream: streamMethod,
   };
 }
 
-export function create<P, M, R>(): Grouping<P, M, R> {
+export function create<C, U, A>(): Grouping<C, U, A> {
 
-  const shouldReset: ShouldReset<P> = (before, parameter) => true;
-  const init: Init<P> = () => undefined;
-  const reducer: Reducer<P, P> = (acc, parameter) => parameter; // TODO ここにconsole.debugしこめる
+  const shouldDrop: ShouldDrop<C> = (previous, current) => true;
+  const init: Init<U> = () => undefined;
+  const reducer: Reducer<C, U> = (acc, current) => current; // TODO ここにconsole.debugしこめる
 
-  const layerdReducer = first(init, shouldReset, reducer);
-
-  const groupingMethod: GroupingMethod<P, M, R> = (keys, getReducer) => createFrom(grouping(layerdReducer, keys, getReducer));
-  const listMethod: ListMethod<M> = (getReducer) => list(layerdReducer, getReducer);
-  const streamMethod: StreamMethod<M, R> = (init, getReducer) => stream(layerdReducer, init, getReducer);
-
-  return {
-    grouping: groupingMethod,
-    list: listMethod,
-    stream: streamMethod,
-  };
+  return createFrom(first(init, shouldReset, reducer));
 }
